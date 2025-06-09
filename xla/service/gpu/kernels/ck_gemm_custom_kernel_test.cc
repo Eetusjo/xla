@@ -1,0 +1,93 @@
+/* Copyright 2023 The OpenXLA Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+==============================================================================*/
+
+#include "xla/service/gpu/kernels/ck_gemm_custom_kernel.h"
+
+#include <cstdint>
+#include <cstring>
+#include <string>
+#include <vector>
+
+#include <gtest/gtest.h>
+#include "xla/stream_executor/device_memory.h"
+#include "xla/stream_executor/kernel.h"
+#include "xla/stream_executor/platform.h"
+#include "xla/stream_executor/platform_manager.h"
+#include "xla/stream_executor/stream.h"
+#include "xla/stream_executor/stream_executor.h"
+#include "xla/tsl/lib/core/status_test_util.h"
+#include "xla/tsl/platform/statusor.h"
+#include "xla/tsl/platform/test.h"
+#include "xla/xla_data.pb.h"
+#include "tsl/platform/path.h"
+
+namespace xla::gpu::kernel::gemm_universal {
+
+TEST(CkGemmKernelTest, SanityGemm) {
+  se::Platform* platform =
+      se::PlatformManager::PlatformWithName("ROCM").value();
+  se::StreamExecutor* executor = platform->ExecutorForDevice(0).value();
+
+  auto stream = executor->CreateStream().value();
+
+  // Load [4, 4] x [4, 4] gemm kernel written in CUDA C++ with CUTLASS.
+  int64_t m = 4;
+  int64_t n = 4;
+  int64_t k = 4;
+
+  TF_ASSERT_OK_AND_ASSIGN(
+      auto custom_kernels,
+      GetCkGemmKernels("ck_gemm", PrimitiveType::BF16,
+                       PrimitiveType::BF16, PrimitiveType::BF16, m, n, k, //4, 4, 4,
+                       executor->GetDeviceDescription()));
+  auto custom_kernel = custom_kernels[0];
+  TF_ASSERT_OK_AND_ASSIGN(auto gemm,
+                          executor->LoadKernel(custom_kernel.kernel_spec()));
+
+  int64_t length_a = m*k;
+  int64_t length_b = k*n;
+  int64_t length_c = m*n;
+  int64_t byte_length_a = 2*length_a;
+  int64_t byte_length_b = 2*length_b;
+  int64_t byte_length_c = 2*length_c;
+
+  // Prepare arguments: a=2, b=2, c=0
+  se::DeviceMemory<ushort> a = executor->AllocateArray<ushort>(length_a, 0);
+  se::DeviceMemory<ushort> b = executor->AllocateArray<ushort>(length_b, 0);
+  se::DeviceMemory<ushort> c = executor->AllocateArray<ushort>(length_c, 0);
+
+  uint32_t pattern = 0x40004000;
+  //TF_ASSERT_OK(stream->Memset32(&a, pattern, byte_length_a));
+  //TF_ASSERT_OK(stream->Memset32(&b, pattern, byte_length_b));
+  TF_ASSERT_OK(stream->MemZero(&a, byte_length_a));
+  TF_ASSERT_OK(stream->MemZero(&b, byte_length_b));
+  TF_ASSERT_OK(stream->MemZero(&c, byte_length_c));
+
+  // Launch gemm kernel with device memory arguments.
+  se::KernelArgsDeviceMemoryArray arr(
+      std::vector<se::DeviceMemoryBase>({a, b, c}),
+      custom_kernel.shared_memory_bytes());
+  TF_ASSERT_OK(gemm->Launch(custom_kernel.thread_dims(),
+                            custom_kernel.block_dims(), stream.get(), arr));
+
+  // Copy `c` data back to host.
+  std::vector<ushort> dst(length_c, 0);
+  TF_ASSERT_OK(stream->Memcpy(dst.data(), c, byte_length_c));
+
+  std::vector<ushort> expected(length_c, 0);// 0x4180);
+  ASSERT_EQ(dst, expected);
+}
+
+}  // namespace xla::gpu::kernel::gemm_universal

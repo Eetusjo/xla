@@ -6,6 +6,10 @@ load(
     "//xla/tsl/platform/default:cuda_build_defs.bzl",
     "if_cuda_is_configured",
 )
+load(
+    "//xla/service/gpu:build_defs.bzl",
+    "gpu_kernel_library",
+)
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
@@ -137,6 +141,156 @@ xla_test(
         "@com_google_absl//absl/status:statusor",
         "@com_google_googletest//:gtest",
     ],
+)
+
+cc_library(
+    name = "ck_gemm_fusion",
+    srcs = ["ck_gemm_fusion.cc"],
+    tags = [
+        "rocm-only",
+        "gpu",
+    ],
+    deps = [
+        ":custom_kernel",
+        ":custom_kernel_fusion",
+        ":ck_gemm",
+        ":ck_gemm_custom_kernel",
+        "//xla:shape_util",
+        "//xla:xla_data_proto_cc",
+        "//xla/hlo/ir:hlo",
+        "//xla/service:pattern_matcher",
+        "//xla/service/gpu:backend_configs_cc",
+        "//xla/stream_executor:device_description",
+        "//xla/tsl/platform:errors",
+        "//xla/tsl/platform:statusor",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/types:span",
+    ],
+    alwayslink = 1,  # static fusion registration
+)
+
+xla_test(
+    name = "ck_gemm_fusion_test",
+    srcs = ["ck_gemm_fusion_test.cc"],
+    backends = ["gpu"],
+    tags = ["rocm-only"],
+    deps = [
+        ":ck_gemm_custom_kernel",
+        ":ck_gemm_fusion",
+        "//xla:array",
+        "//xla:array2d",
+        "//xla:array3d",
+        "//xla:error_spec",
+        "//xla:literal_util",
+        "//xla:types",
+        "//xla:xla_data_proto_cc",
+        "//xla/service/gpu:gpu_device_info_for_tests",
+        "//xla/service/gpu/transforms:custom_kernel_fusion_rewriter",
+        "//xla/stream_executor:device_description",
+        "//xla/tests:hlo_test_base",
+        "//xla/tsl/platform:test",
+        "//xla/tsl/platform:test_main",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+#===--------------------------------------------------------------------------------------------===#
+# CK Gemm <-> xla::gpu::kernel::CustomKernel adaptor
+#===--------------------------------------------------------------------------------------------===#
+
+cc_library(
+    name = "ck_gemm_custom_kernel",
+    srcs = ["ck_gemm_custom_kernel.cc"],
+    hdrs = ["ck_gemm_custom_kernel.h"],
+    tags = [
+        "rocm-only",
+        "gpu",
+    ],
+    deps = [
+        ":custom_kernel",
+        ":ck_gemm",
+        ":ck_gemm_kernels",
+        "//xla:xla_data_proto_cc",
+        "//xla/stream_executor:device_description",
+        "//xla/stream_executor:kernel",
+        "//xla/stream_executor:kernel_spec",
+        #"//xla/stream_executor:launch_dim",
+        "@com_google_absl//absl/container:flat_hash_map",
+        #"@com_google_absl//absl/log",
+        #"@com_google_absl//absl/status",
+        #"@com_google_absl//absl/status:statusor",
+        #"@com_google_absl//absl/strings",
+        "@local_config_rocm//rocm:rocm_headers",
+    ],
+)
+
+xla_test(
+    name = "ck_gemm_custom_kernel_test",
+    srcs = ["ck_gemm_custom_kernel_test.cc"],
+    backends = ["gpu"],
+    linkstatic = False,  # This test is incompatible with linkstatic in the OSS build.
+    tags = ["gpu", "rocm-only"],
+    deps = [
+        ":ck_gemm_custom_kernel",
+        "//xla:xla_data_proto_cc",
+        "//xla/stream_executor:device_memory",
+        "//xla/stream_executor:kernel",
+        "//xla/stream_executor:platform",
+        "//xla/stream_executor:platform_manager",
+        "//xla/stream_executor:stream",
+        "//xla/stream_executor:stream_executor_h",
+        "//xla/stream_executor/rocm:rocm_platform",
+        "//xla/tsl/lib/core:status_test_util",
+        "//xla/tsl/platform:statusor",
+        "//xla/tsl/platform:test",
+        "//xla/tsl/platform:test_main",
+        "@com_google_googletest//:gtest",
+        "@tsl//tsl/platform:path",
+    ],
+)
+
+
+cc_library(
+    name = "ck_gemm",
+    hdrs = ["ck_gemm.h"],
+    deps = ["//xla/tsl/platform:logging"],
+)
+
+gpu_kernel_library(
+    name = "ck_gemm_adaptor",
+    hdrs = ["ck_gemm_adaptor.cu.h"],
+    tags = ["rocm-only"],
+    deps = [
+        ":ck_gemm",
+        "@local_config_rocm//rocm:rocm_headers",
+    ],
+)
+
+cc_library(
+    name = "ck_gemm_kernels",
+    tags = [
+        "rocm-only",
+        "gpu",
+    ],
+    deps = [
+        ":ck_gemm_kernel_bf16",
+    ],
+)
+
+gpu_kernel_library(
+    name = "ck_gemm_kernel_bf16",
+    srcs = ["ck_gemm_kernel_bf16.cu.cc"],
+    tags = ["gpu", "rocm-only"],
+    deps = [
+        ":ck_gemm_adaptor",
+        "@local_config_rocm//rocm:rocm_headers",
+    ]
 )
 
 #===--------------------------------------------------------------------------------------------===#
