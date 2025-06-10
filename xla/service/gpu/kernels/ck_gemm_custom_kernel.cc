@@ -98,54 +98,9 @@ KernelArgsPacking ArgsPacking(int32_t m, int32_t n, int32_t k,
       m, n, k, 0, 0, 0, 1
     };
 
-//    // Workspace argument always passed as the last one (if passed at all).
-//    if (indices.has_workspace) {
-//      size_t num_mem_args = mem_args->device_memory_args().size();
-//      arguments.workspace =
-//          const_cast<void*>(mem_args->device_memory_ptr(num_mem_args - 1));
-//    } else {
-//      arguments.workspace = nullptr;
-//    }
-//
-//    if (!adaptor.CanImplement(arguments)) {
-//      return absl::InternalError(absl::StrCat(
-//          "CUTLASS kernel can not implement gemm for a given problem size",
-//          ": m=", m, ", n=", n, ", k=", k));
-//    }
-
-//    auto threads = As<se::ThreadDim>(adaptor.ThreadDim());
-//    auto shmem_bytes = adaptor.SharedMemoryBytes();
-//
-//    // We keep max_occupancy in a static variable as currently for all
-//    // practical purposes all stream executors in the process have identical
-//    // underlying devices, and there is no need to repeatedly query this
-//    // property.
-//    static int32_t sm_occupancy =
-//        kernel.GetMaxOccupiedBlocksPerCore(threads, shmem_bytes).value_or(1);
-//
-//    // TODO(ezhulenev): In theory when sm_occupancy is 0 we should not be able
-//    // to run kernels, and we could return error here, however in practice
-//    // it's not true, and kernels with 0 occupancy run just fine! Figure out
-//    // where is the problem, and how we can reliably use sm occupancy numbers.
-//    //
-//    // TODO(ezhulenev): We need to set kernel dynamic shmem limit before asking
-//    // for sm occupancy, it's likely why we get 0 today.
-//    if (sm_occupancy == 0) {
-//      LOG_FIRST_N(WARNING, 1)
-//          << "CUTLASS gemm kernel reported 0 occupancy: threads_per_block="
-//          << (threads.x * threads.y * threads.z)
-//          << ", dynamic_shared_memory_bytes=" << shmem_bytes;
-//    }
-
-    // Initialize parameters storage using adaptor.
     Params params;
     adaptor.Initialize(&params, arguments, device_sms);
 
-    // TODO(ezhulenev): We need to support EmplaceKernelArgs with inplace
-    // construction to avoid copying 1kb of byte storage.
-    //
-    // TODO(ezhulenev): Remove `DynamicSliceArguments` once we encode
-    // dynamic slice offsets in kernel parameters.
     return se::PackKernelArgs<Params>(
         args.number_of_shared_bytes(), params);
   };
