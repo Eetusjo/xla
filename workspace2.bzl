@@ -105,6 +105,14 @@ def _tf_repositories():
     )
 
     tf_http_archive(
+        name = "ck_archive",
+        build_file = "//third_party:ck.BUILD",
+        sha256 = "7b62e906a391b4137f0a495df3e74a75cd58e320675c92dd2a71147eb5f42661",
+        strip_prefix = "composable_kernel-rocm-6.4.1",
+        urls = tf_mirror_urls("https://github.com/ROCm/composable_kernel/archive/refs/tags/rocm-6.4.1.zip"),
+    )
+
+    tf_http_archive(
         name = "boringssl",
         sha256 = "9dc53f851107eaf87b391136d13b815df97ec8f76dadb487b58b2fc45e624d2c",
         strip_prefix = "boringssl-c00d7ca810e93780bd0c8ee4eea28f4f2ea4bcdc",

@@ -78,7 +78,7 @@ cc_library(
     name = "custom_fusion_library",
     tags = ["gpu"],
     visibility = [":friends"],
-    deps = if_cuda_is_configured([":cutlass_gemm_fusion"]),
+    deps = [":ck_gemm_fusion"], #if_cuda_is_configured([":cutlass_gemm_fusion"]),
 )
 
 cc_library(
@@ -146,6 +146,7 @@ xla_test(
 cc_library(
     name = "ck_gemm_fusion",
     srcs = ["ck_gemm_fusion.cc"],
+    hdrs = ["ck_gemm_fusion.h"],
     tags = [
         "rocm-only",
         "gpu",
@@ -153,6 +154,7 @@ cc_library(
     deps = [
         ":custom_kernel",
         ":custom_kernel_fusion",
+        ":custom_kernel_fusion_pattern",
         ":ck_gemm",
         ":ck_gemm_custom_kernel",
         "//xla:shape_util",
@@ -289,7 +291,7 @@ gpu_kernel_library(
     tags = ["gpu", "rocm-only"],
     deps = [
         ":ck_gemm_adaptor",
-        "@local_config_rocm//rocm:rocm_headers",
+        "@ck_archive//:ck"
     ]
 )
 
