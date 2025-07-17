@@ -53,7 +53,49 @@ class CkFusionTest : public HloTestBase {
 //        .shared_memory_bytes();
 //  };
 };
+//
+//===----------------------------------------------------------------------===//
+// Pattern matching tests
+//===----------------------------------------------------------------------===//
 
+//TEST_F(CkFusionTest, RowMajorGemm) {
+//  const char* hlo = R"(
+//    HloModule test
+//
+//    ENTRY %main (p0: f32[15,19], p1: f32[19,17]) -> f32[15,17] {
+//      %p0 = f32[15,19]{1,0} parameter(0)
+//      %p1 = f32[19,17]{1,0} parameter(1)
+//      ROOT %r = f32[15,17]{1,0} dot(%p0, %p1),
+//        lhs_contracting_dims={1}, rhs_contracting_dims={0}
+//    }
+//  )";
+//
+//  const char* expected = R"(
+//    ; CHECK: %ck_gemm {{.*}} {
+//    ; CHECK:   [[P0:%[^ ]+]] = f32[15,19]{1,0} parameter(0)
+//    ; CHECK:   [[P1:%[^ ]+]] = f32[19,17]{1,0} parameter(1)
+//    ; CHECK:   ROOT [[DOT:%[^ ]+]] = f32[15,17]{1,0} dot([[P0]], [[P1]]),
+//    ; CHECK:     lhs_contracting_dims={1}, rhs_contracting_dims={0}
+//    ; CHECK: }
+//
+//    ; CHECK: ENTRY %main {{.*}} {
+//    ; CHECK:   ROOT [[FUSION:%[^ ]+]] = f32[15,17]{1,0} fusion
+//    ; CHECK:     kind=kCustom, calls=%ck_gemm,
+//    ; CHECK:     backend_config={
+//    ; CHECK:       "kind":"__custom_fusion",
+//    ; CHECK:       "custom_fusion_config":{"name":"ck_gemm","kernel_index":0}
+//    ; CHECK:     }
+//    ; CHECK: }
+//  )";
+//
+//  CustomKernelFusionPatternRegistry patterns;
+//  patterns.Emplace<CkGemmPattern>();
+//
+//  auto device = TestGpuDeviceInfo::AMDMI210DeviceInfo();
+//  CustomKernelFusionRewriter pass(&device, /*kernel_index=*/0, &patterns);
+//  RunAndFilecheckHloRewrite(hlo, std::move(pass), expected);
+//}
+//
 //===----------------------------------------------------------------------===//
 // Run And Compare Tests
 //===----------------------------------------------------------------------===//
@@ -61,13 +103,17 @@ class CkFusionTest : public HloTestBase {
 TEST_F(CkFusionTest, RowMajorGemmKernel) {
   ErrorSpec error_spec{/*aabs=*/1e-3, /*arel=*/1e-3};
 
+  int64_t m = 3840;
+  int64_t n = 4096;
+  int64_t k = 2048;
+
   const char* hlo_text = R"(
     HloModule test
 
-    ENTRY %main (p0: bf16[100,784], p1: bf16[784,10]) -> bf16[100,10] {
-      %p0 = bf16[100,784]{1,0} parameter(0)
-      %p1 = bf16[784,10]{1,0} parameter(1)
-      ROOT %r = bf16[100,10]{1,0} dot(%p0, %p1),
+    ENTRY %main (p0: bf16[3840,2048], p1: bf16[2048,4096]) -> bf16[3840,4096] {
+      %p0 = bf16[3840,2048]{1,0} parameter(0)
+      %p1 = bf16[2048,4096]{1,0} parameter(1)
+      ROOT %r = bf16[3840,4096]{1,0} dot(%p0, %p1),
         lhs_contracting_dims={1}, rhs_contracting_dims={0}
     }
   )";
@@ -76,16 +122,16 @@ TEST_F(CkFusionTest, RowMajorGemmKernel) {
   HloModule ck
 
   ck_gemm {
-    arg0 = bf16[100,784]{1,0} parameter(0)
-    arg1 = bf16[784,10]{1,0} parameter(1)
-    ROOT dot = bf16[100,10]{1,0} dot(arg0, arg1),
+    arg0 = bf16[3840,2048]{1,0} parameter(0)
+    arg1 = bf16[2048,4096]{1,0} parameter(1)
+    ROOT dot = bf16[3840,4096]{1,0} dot(arg0, arg1),
       lhs_contracting_dims={1}, rhs_contracting_dims={0}
   }
 
   ENTRY e {
-    arg0 = bf16[100,784]{1,0} parameter(0)
-    arg1 = bf16[784,10]{1,0} parameter(1)
-    ROOT _ = bf16[100,10]{1,0} fusion(arg0, arg1), kind=kCustom, calls=ck_gemm,
+    arg0 = bf16[3840,2048]{1,0} parameter(0)
+    arg1 = bf16[2048,4096]{1,0} parameter(1)
+    ROOT _ = bf16[3840,4096]{1,0} fusion(arg0, arg1), kind=kCustom, calls=ck_gemm,
       backend_config={"fusion_backend_config":{kind: "__custom_fusion", custom_fusion_config: {"name":"ck_gemm", "kernel_index":0}}}
   })";
 

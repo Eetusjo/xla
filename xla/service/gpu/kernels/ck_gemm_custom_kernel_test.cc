@@ -43,14 +43,14 @@ TEST(CkGemmKernelTest, SanityGemm) {
   auto stream = executor->CreateStream().value();
 
   // Load [4, 4] x [4, 4] gemm kernel written in CUDA C++ with CUTLASS.
-  int64_t m = 4;
-  int64_t n = 4;
-  int64_t k = 4;
+  int64_t m = 3840;
+  int64_t n = 4096;
+  int64_t k = 2048;
 
   TF_ASSERT_OK_AND_ASSIGN(
       auto custom_kernels,
-      GetCkGemmKernels("ck_gemm", PrimitiveType::BF16,
-                       PrimitiveType::BF16, PrimitiveType::BF16, m, n, k, //4, 4, 4,
+      GetCkGemmKernels("ck_gemm", PrimitiveType::F16,
+                       PrimitiveType::F16, PrimitiveType::F16, m, n, k, //4, 4, 4,
                        executor->GetDeviceDescription()));
   auto custom_kernel = custom_kernels[0];
   TF_ASSERT_OK_AND_ASSIGN(auto gemm,
@@ -69,10 +69,10 @@ TEST(CkGemmKernelTest, SanityGemm) {
   se::DeviceMemory<ushort> c = executor->AllocateArray<ushort>(length_c, 0);
 
   uint32_t pattern = 0x40004000;
-  //TF_ASSERT_OK(stream->Memset32(&a, pattern, byte_length_a));
-  //TF_ASSERT_OK(stream->Memset32(&b, pattern, byte_length_b));
-  TF_ASSERT_OK(stream->MemZero(&a, byte_length_a));
-  TF_ASSERT_OK(stream->MemZero(&b, byte_length_b));
+  TF_ASSERT_OK(stream->Memset32(&a, pattern, byte_length_a));
+  TF_ASSERT_OK(stream->Memset32(&b, pattern, byte_length_b));
+  //TF_ASSERT_OK(stream->MemZero(&a, byte_length_a));
+  //TF_ASSERT_OK(stream->MemZero(&b, byte_length_b));
   TF_ASSERT_OK(stream->MemZero(&c, byte_length_c));
 
   // Launch gemm kernel with device memory arguments.
@@ -86,8 +86,57 @@ TEST(CkGemmKernelTest, SanityGemm) {
   std::vector<ushort> dst(length_c, 0);
   TF_ASSERT_OK(stream->Memcpy(dst.data(), c, byte_length_c));
 
-  std::vector<ushort> expected(length_c, 0);// 0x4180);
+  std::vector<ushort> expected(length_c, 17920);
   ASSERT_EQ(dst, expected);
 }
+
+//TEST(CkGemmKernelTest, SimpleGemm) {
+//  se::Platform* platform =
+//      se::PlatformManager::PlatformWithName("CUDA").value();
+//  se::StreamExecutor* executor = platform->ExecutorForDevice(0).value();
+//
+//  auto stream = executor->CreateStream().value();
+//
+//  // Load [4, 4] x [4, 4] gemm kernel written in CUDA C++ with CUTLASS.
+//  TF_ASSERT_OK_AND_ASSIGN(
+//      auto custom_kernels,
+//      GetCkGemmKernels("ck_gemm", PrimitiveType::F32,
+//                            PrimitiveType::F32, PrimitiveType::F32, 4, 4, 4,
+//                            executor->GetDeviceDescription()));
+//  auto custom_kernel = custom_kernels[0];
+//
+//  TF_ASSERT_OK_AND_ASSIGN(auto gemm,
+//                          executor->LoadKernel(custom_kernel.kernel_spec()));
+//
+//  int64_t length = 4 * 4;
+//  int64_t byte_length = sizeof(float) * length;
+//
+//  // Prepare arguments: a=2, b=2, c=0
+//  se::DeviceMemory<float> a = executor->AllocateArray<float>(length, 0);
+//  se::DeviceMemory<float> b = executor->AllocateArray<float>(length, 0);
+//  se::DeviceMemory<float> c = executor->AllocateArray<float>(length, 0);
+//
+//  float value = 2.0;
+//  uint32_t pattern;
+//  std::memcpy(&pattern, &value, sizeof(pattern));
+//
+//  TF_ASSERT_OK(stream->Memset32(&a, pattern, byte_length));
+//  TF_ASSERT_OK(stream->Memset32(&b, pattern, byte_length));
+//  TF_ASSERT_OK(stream->MemZero(&c, byte_length));
+//
+//  // Launch gemm kernel with device memory arguments.
+//  se::KernelArgsDeviceMemoryArray arr(
+//      std::vector<se::DeviceMemoryBase>({a, b, c}),
+//      custom_kernel.shared_memory_bytes());
+//  TF_ASSERT_OK(gemm->Launch(custom_kernel.thread_dims(),
+//                            custom_kernel.block_dims(), stream.get(), arr));
+//
+//  // Copy `c` data back to host.
+//  std::vector<float> dst(length, -1.0f);
+//  TF_ASSERT_OK(stream->Memcpy(dst.data(), c, byte_length));
+//
+//  std::vector<float> expected(length, 16.0);
+//  ASSERT_EQ(dst, expected);
+//}
 
 }  // namespace xla::gpu::kernel::gemm_universal

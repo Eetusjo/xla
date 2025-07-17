@@ -13,7 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-//#include <cstddef>
+#include "xla/service/gpu/kernels/ck_gemm_fusion.h"
+
 #include <cstdint>
 #include <vector>
 
@@ -26,17 +27,27 @@ limitations under the License.
 //#include "xla/service/gpu/backend_configs.pb.h"
 #include "xla/service/gpu/kernels/custom_kernel.h"
 #include "xla/service/gpu/kernels/custom_kernel_fusion.h"
-//#include "xla/service/gpu/kernels/ck_gemm.h"
 #include "xla/service/gpu/kernels/ck_gemm_custom_kernel.h"
-//#include "xla/service/pattern_matcher.h"
 #include "xla/shape.h"
 #include "xla/stream_executor/device_description.h"
-//#include "xla/tsl/platform/errors.h"
-//#include "xla/tsl/platform/statusor.h"
 #include "xla/xla_data.pb.h"
 
 
 namespace xla::gpu {
+
+//std::optional<CustomKernelFusionPattern::Match> CutlassGemmPattern::TryMatch(
+//    const se::DeviceDescription& device, HloInstruction* instr) const {
+//  auto* dot = DynCast<HloDotInstruction>(instr);
+//  if (!dot) return std::nullopt;
+//
+//  auto matched = MatchSimpleGemm(dot, {PrimitiveType::F32});
+//  if (!matched.ok()) return std::nullopt;
+//
+//  CustomFusionConfig config;
+//  config.set_name("ck_gemm");
+//  return Match{config, {instr}};
+//}
+
 
 class CkGemmFusion : public CustomKernelFusion {
  public:
@@ -64,8 +75,8 @@ class CkGemmFusion : public CustomKernelFusion {
     PrimitiveType lhs_type = lhs->shape().element_type();
     PrimitiveType rhs_type = rhs->shape().element_type();
 
-        return ::xla::gpu::kernel::gemm_universal::GetCkGemmKernels("ck_gemm", dot_type, lhs_type, rhs_type,
-                            m, n, k, device);
+    return kernel::gemm_universal::GetCkGemmKernels(
+        "ck_gemm", dot_type, lhs_type, rhs_type, m, n, k, device);
   }
 };
 

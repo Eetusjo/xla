@@ -281,19 +281,30 @@ cc_library(
         "gpu",
     ],
     deps = [
-        ":ck_gemm_kernel_bf16",
+        #":ck_gemm_kernel_bf16",
+        ":ck_gemm_kernel_f32xf32_to_f32",
     ],
 )
 
 gpu_kernel_library(
-    name = "ck_gemm_kernel_bf16",
-    srcs = ["ck_gemm_kernel_bf16.cu.cc"],
+    name = "ck_gemm_kernel_f32xf32_to_f32",
+    srcs = ["ck_gemm_kernel_f32xf32_to_f32.cu.cc"],
     tags = ["gpu", "rocm-only"],
     deps = [
         ":ck_gemm_adaptor",
         "@ck_archive//:ck"
     ]
 )
+
+#gpu_kernel_library(
+#    name = "ck_gemm_kernel_bf16",
+#    srcs = ["ck_gemm_kernel_bf16.cu.cc"],
+#    tags = ["gpu", "rocm-only"],
+#    deps = [
+#        ":ck_gemm_adaptor",
+#        "@ck_archive//:ck"
+#    ]
+#)
 
 #===--------------------------------------------------------------------------------------------===#
 # CUTLASS Gemm <-> xla::gpu::kernel::CustomKernel adaptor

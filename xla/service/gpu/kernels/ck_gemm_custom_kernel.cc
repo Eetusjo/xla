@@ -52,6 +52,9 @@ namespace xla::gpu::kernel::gemm_universal {
 ////
 extern template class Adaptor<BF16xBF16ToBF16>;
 extern template class DeviceKernel<BF16xBF16ToBF16>;
+
+extern template class Adaptor<F16xF16ToF16>;
+extern template class DeviceKernel<F16xF16ToF16>;
 //
 ////===----------------------------------------------------------------------===//
 //// CUTLASS kernel arguments packing
@@ -95,7 +98,7 @@ KernelArgsPacking ArgsPacking(int32_t m, int32_t n, int32_t k,
       const_cast<const void*>(mem_args->device_memory_ptr(0)),
       const_cast<const void*>(mem_args->device_memory_ptr(1)),
       const_cast<void*>(mem_args->device_memory_ptr(2)),
-      m, n, k, 0, 0, 0, 1
+      m, n, k, k, k, n, 1
     };
 
     Params params;
@@ -114,7 +117,7 @@ static CustomKernel Load(std::string name,
                          Adaptor<Tag> adaptor = {},
                          DeviceKernel<Tag> kernel = {}) {
   // Get the dispatch grid size and shared memory requirements.
-  auto block_dim = As<se::BlockDim>(adaptor.BlockDim(m, n, k));
+  auto block_dim = As<se::BlockDim>(adaptor.BlockDim(m, n, 1));
   auto thread_dim = As<se::ThreadDim>(adaptor.ThreadDim());
   // todo(esjoblom): ck uses static lds?
   auto shared_memory_bytes = 0; //adaptor.SharedMemoryBytes();
@@ -137,8 +140,10 @@ absl::StatusOr<std::vector<CustomKernel>> GetCkGemmKernels(
   absl::flat_hash_map<std::tuple<PrimitiveType, PrimitiveType, PrimitiveType>,
                       std::vector<CustomKernel>>
       kernels = {
-          {{BF16, BF16, BF16},
-           {Load<BF16xBF16ToBF16>(name, m, n, k, device)}}};
+          //{{BF16, BF16, BF16},
+          // {Load<BF16xBF16ToBF16>(name, m, n, k, device)}},
+          {{F16, F16, F16},
+           {Load<F16xF16ToF16>(name, m, n, k, device)}}};
 
   auto loaded_kernels = kernels.find({lhs_type, rhs_type, dot_type});
   if (loaded_kernels != kernels.end()) {
