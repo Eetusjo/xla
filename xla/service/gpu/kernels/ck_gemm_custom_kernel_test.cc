@@ -42,13 +42,13 @@ TEST(CkGemmKernelTest, SimpleGemm) {
 
   auto stream = executor->CreateStream().value();
 
-  // Load [4, 4] x [4, 4] gemm kernel written in CUDA C++ with CUTLASS.
+  // Load [4, 4] x [4, 4] gemm kernel written in HIP C++ with ck_tile.
   TF_ASSERT_OK_AND_ASSIGN(
       auto custom_kernels,
-      GetCutlassGemmKernels("ck_gemm", PrimitiveType::F32,
-                            PrimitiveType::F32, PrimitiveType::F32, 4, 4, 4,
-                            /*indices=*/{0, 1, 2}, /*slices=*/{},
-                            executor->GetDeviceDescription()));
+      GetCkGemmKernels("ck_gemm", PrimitiveType::F32,
+                       PrimitiveType::F32, PrimitiveType::F32, 4, 4, 4,
+                       /*indices=*/{0, 1, 2}, /*slices=*/{},
+                       executor->GetDeviceDescription()));
   auto custom_kernel = custom_kernels[0];
 
   TF_ASSERT_OK_AND_ASSIGN(auto gemm,
