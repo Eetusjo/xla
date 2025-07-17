@@ -86,7 +86,6 @@ struct Dim3 {
 template <typename Tag>
 class Adaptor {
  public:
-  std::optional<Dim3> ClusterDim() const;
   Dim3 BlockDim(int32_t m, int32_t n, int32_t k) const;
   Dim3 ThreadDim() const;
 
