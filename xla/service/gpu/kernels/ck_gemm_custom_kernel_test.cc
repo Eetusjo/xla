@@ -20,6 +20,8 @@ limitations under the License.
 #include <string>
 #include <vector>
 
+#include <hip/hip_fp16.h>
+
 #include <gtest/gtest.h>
 #include "xla/stream_executor/device_memory.h"
 #include "xla/stream_executor/kernel.h"
@@ -45,8 +47,8 @@ TEST(CkGemmKernelTest, SimpleGemm) {
   // Load [4, 4] x [4, 4] gemm kernel written in HIP C++ with ck_tile.
   TF_ASSERT_OK_AND_ASSIGN(
       auto custom_kernels,
-      GetCkGemmKernels("ck_gemm", PrimitiveType::F32,
-                       PrimitiveType::F32, PrimitiveType::F32, 4, 4, 4,
+      GetCkGemmKernels("ck_gemm", PrimitiveType::F16,
+                       PrimitiveType::F16, PrimitiveType::F16, 4, 4, 4,
                        /*indices=*/{0, 1, 2}, /*slices=*/{},
                        executor->GetDeviceDescription()));
   auto custom_kernel = custom_kernels[0];
@@ -55,19 +57,23 @@ TEST(CkGemmKernelTest, SimpleGemm) {
                           executor->LoadKernel(custom_kernel.kernel_spec()));
 
   int64_t length = 4 * 4;
-  int64_t byte_length = sizeof(float) * length;
+  int64_t byte_length = sizeof(__half) * length;
 
-  // Prepare arguments: a=2, b=2, c=0
-  se::DeviceMemory<float> a = executor->AllocateArray<float>(length, 0);
-  se::DeviceMemory<float> b = executor->AllocateArray<float>(length, 0);
-  se::DeviceMemory<float> c = executor->AllocateArray<float>(length, 0);
+  // Prepare arguments: a=2, b=2, c=0 (using FP16)
+  se::DeviceMemory<__half> a = executor->AllocateArray<__half>(length, 0);
+  se::DeviceMemory<__half> b = executor->AllocateArray<__half>(length, 0);
+  se::DeviceMemory<__half> c = executor->AllocateArray<__half>(length, 0);
 
-  float value = 2.0;
-  uint32_t pattern;
+  // Create FP16 value of 2.0
+  __half value = __float2half(2.0f);
+  uint16_t pattern;
   std::memcpy(&pattern, &value, sizeof(pattern));
 
-  TF_ASSERT_OK(stream->Memset32(&a, pattern, byte_length));
-  TF_ASSERT_OK(stream->Memset32(&b, pattern, byte_length));
+  // For FP16, we need to set 16-bit patterns
+  uint32_t pattern32 = (static_cast<uint32_t>(pattern) << 16) | pattern;
+  
+  TF_ASSERT_OK(stream->Memset32(&a, pattern32, byte_length));
+  TF_ASSERT_OK(stream->Memset32(&b, pattern32, byte_length));
   TF_ASSERT_OK(stream->MemZero(&c, byte_length));
 
   // Launch gemm kernel with device memory arguments.
@@ -78,10 +84,11 @@ TEST(CkGemmKernelTest, SimpleGemm) {
                             custom_kernel.block_dims(), stream.get(), arr));
 
   // Copy `c` data back to host.
-  std::vector<float> dst(length, -1.0f);
+  std::vector<__half> dst(length, __float2half(-1.0f));
   TF_ASSERT_OK(stream->Memcpy(dst.data(), c, byte_length));
 
-  std::vector<float> expected(length, 16.0);
+  // Expected result: 2.0 * 2.0 = 4.0 for each element, 4x4 GEMM gives 4*4.0 = 16.0
+  std::vector<__half> expected(length, __float2half(16.0f));
   ASSERT_EQ(dst, expected);
 }
 

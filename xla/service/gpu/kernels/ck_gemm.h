@@ -43,7 +43,7 @@ namespace xla::gpu::kernel::gemm_universal {
 // Here we re-define some of the enums and types defined in ck_tile to
 // break a dependency on them from XLA.
 
-struct F32xF32ToF32 {};
+struct F16xF16ToF16 {};
 
 // Matches GemmKernelArguments in ck_tile
 struct Arguments {

@@ -446,13 +446,13 @@ rocm_library(
         "rocm-only",
     ],
     deps = [
-        ":ck_gemm_kernel_f32xf32_to_f32",
+        ":ck_gemm_kernel_f16xf16_to_f16",
     ],
 )
 
 rocm_library(
-    name = "ck_gemm_kernel_f32xf32_to_f32",
-    srcs = ["ck_gemm_kernel_f32xf32_to_f32.cu.cc"],
+    name = "ck_gemm_kernel_f16xf16_to_f16",
+    srcs = ["ck_gemm_kernel_f16xf16_to_f16.cu.cc"],
     tags = [
         "gpu",
         "rocm-only",

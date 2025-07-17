@@ -22,10 +22,10 @@ limitations under the License.
 namespace xla::gpu::kernel::gemm_universal {
 
 //===----------------------------------------------------------------------===//
-// F32 Universal GEMM Kernel Configuration
+// FP16 Universal GEMM Kernel Configuration  
 //===----------------------------------------------------------------------===//
 
-// Use conservative tile sizes that work well for most F32 problems
+// Use conservative tile sizes that work well for most FP16 problems
 constexpr ck_tile::index_t M_Tile = 128;
 constexpr ck_tile::index_t N_Tile = 128;
 constexpr ck_tile::index_t K_Tile = 32;
@@ -53,11 +53,11 @@ constexpr bool has_hot_loop = false;
 constexpr ck_tile::TailNumber tail_number = ck_tile::TailNumber::Full;
 constexpr auto scheduler = ck_tile::GemmPipelineScheduler::Interwave;
 
-// Data types
-using ADataType = float;
-using BDataType = float;
-using AccDataType = float;
-using CDataType = float;
+// Data types - use FP16 for better CK tile support
+using ADataType = ck_tile::half_t;
+using BDataType = ck_tile::half_t;
+using AccDataType = float;  // Use F32 accumulation for better precision
+using CDataType = ck_tile::half_t;
 
 // Layouts - assume row-major for all matrices
 using ALayout = ck_tile::tensor_layout::gemm::RowMajor;
@@ -111,10 +111,10 @@ using GemmEpilogue = ck_tile::CShuffleEpilogue<
 using CkGemmKernel = ck_tile::GemmKernel<TilePartitioner, GemmPipeline, GemmEpilogue>;
 
 // Register the kernel with the XLA traits system
-XLA_GPU_DEFINE_CK_GEMM_TRAITS(F32xF32ToF32, CkGemmKernel);
+XLA_GPU_DEFINE_CK_GEMM_TRAITS(F16xF16ToF16, CkGemmKernel);
 
 // Explicit template instantiation for the adaptor system
-template class Adaptor<F32xF32ToF32>;
-template class DeviceKernel<F32xF32ToF32>;
+template class Adaptor<F16xF16ToF16>;
+template class DeviceKernel<F16xF16ToF16>;
 
 }  // namespace xla::gpu::kernel::gemm_universal
