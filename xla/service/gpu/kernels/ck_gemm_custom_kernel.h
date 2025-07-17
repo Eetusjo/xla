@@ -32,7 +32,7 @@ namespace xla::gpu::kernel::gemm_universal {
 absl::StatusOr<std::vector<CustomKernel>> GetCkGemmKernels(
     std::string name, PrimitiveType dot_type, PrimitiveType lhs_type,
     PrimitiveType rhs_type, int32_t m, int32_t n, int32_t k,
-    const ArgsIndices& indices, const DynamicSliceIndices& slices,
+    const ArgsIndices& indices,
     const se::DeviceDescription& device);
 
 }  // namespace xla::gpu::kernel::gemm_universal

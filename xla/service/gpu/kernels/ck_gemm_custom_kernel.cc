@@ -80,7 +80,6 @@ static int32_t* SlicePtr(const se::KernelArgsDeviceMemoryArray* args,
 template <typename Tag>
 KernelArgsPacking ArgsPacking(int32_t m, int32_t n, int32_t k, 
                               const ArgsIndices& indices,
-                              const DynamicSliceIndices& slices,
                               int32_t device_sms, Adaptor<Tag> adaptor) {
   using Packed = absl::StatusOr<std::unique_ptr<se::KernelArgsPackedArrayBase>>;
 
@@ -102,9 +101,9 @@ KernelArgsPacking ArgsPacking(int32_t m, int32_t n, int32_t k,
 
     // Convert XLA Arguments to CK GemmHostArgs format
     Arguments xla_arguments;
-    xla_arguments.lhs = const_cast<void*>(mem_args->device_memory_ptr(indices.lhs));
-    xla_arguments.rhs = const_cast<void*>(mem_args->device_memory_ptr(indices.rhs));
-    xla_arguments.out = const_cast<void*>(mem_args->device_memory_ptr(indices.out));
+    xla_arguments.a_ptr = const_cast<void*>(mem_args->device_memory_ptr(indices.lhs));
+    xla_arguments.b_ptr = const_cast<void*>(mem_args->device_memory_ptr(indices.rhs));
+    xla_arguments.c_ptr = const_cast<void*>(mem_args->device_memory_ptr(indices.out));
     
     // Set up matrix dimensions
     xla_arguments.M = m;
@@ -119,11 +118,6 @@ KernelArgsPacking ArgsPacking(int32_t m, int32_t n, int32_t k,
     
     // Set k_batch to 1 for basic GEMM (no split-K)
     xla_arguments.k_batch = 1;
-
-    // Set up dynamic slices if they are available.
-    if (slices.out.has_value()) {
-      xla_arguments.slices.out = SlicePtr(mem_args, *slices.out);
-    }
 
     // TODO(esjoblom): Add proper validation for supported configurations
     // For now, assume all reasonable GEMM sizes are supported
@@ -156,10 +150,8 @@ KernelArgsPacking ArgsPacking(int32_t m, int32_t n, int32_t k,
     // TODO(esjoblom): We need to support EmplaceKernelArgs with inplace
     // construction to avoid copying 1kb of byte storage.
     //
-    // TODO(esjoblom): Remove `DynamicSliceArguments` once we encode
-    // dynamic slice offsets in kernel parameters.
-    return se::PackKernelArgs<CkKernelArgs, DynamicSliceArguments>(
-        args.number_of_shared_bytes(), ck_args, xla_arguments.slices);
+    return se::PackKernelArgs<CkKernelArgs>(
+        args.number_of_shared_bytes(), ck_args);
   };
 }
 
@@ -168,7 +160,6 @@ KernelArgsPacking ArgsPacking(int32_t m, int32_t n, int32_t k,
 template <typename Tag>
 static CustomKernel Load(std::string name, int32_t m, int32_t n, int32_t k,
                          const ArgsIndices& indices,
-                         const DynamicSliceIndices& slices,
                          const se::DeviceDescription& device,
                          Adaptor<Tag> adaptor = {},
                          DeviceKernel<Tag> kernel = {}) {
@@ -178,11 +169,11 @@ static CustomKernel Load(std::string name, int32_t m, int32_t n, int32_t k,
   auto thread_dim = As<se::ThreadDim>(adaptor.ThreadDim());
   auto shared_memory_bytes = adaptor.SharedMemoryBytes();
 
-  auto packing = ArgsPacking<Tag>(m, n, k, indices, slices,
+  auto packing = ArgsPacking<Tag>(m, n, k, indices,
                                   device.core_count(), adaptor);
 
   se::KernelLoaderSpec spec = se::KernelLoaderSpec::CreateInProcessSymbolSpec(
-      kernel.symbol(), name, /*arity=*/2, std::move(packing));
+      kernel.symbol(), name, /*arity=*/1, std::move(packing));
 
   if (cluster_dim.has_value()) {
     return CustomKernel(std::move(name), std::move(spec), block_dim, thread_dim,
@@ -196,7 +187,7 @@ static CustomKernel Load(std::string name, int32_t m, int32_t n, int32_t k,
 absl::StatusOr<std::vector<CustomKernel>> GetCkGemmKernels(
     std::string name, PrimitiveType dot_type, PrimitiveType lhs_type,
     PrimitiveType rhs_type, int32_t m, int32_t n, int32_t k,
-    const ArgsIndices& indices, const DynamicSliceIndices& slices,
+    const ArgsIndices& indices, 
     const se::DeviceDescription& device) {
   // Lookup table for supported kernels.
   // LHS_TYPE, RHS_TYPE, DOT_TYPE -> [kernel]
@@ -204,7 +195,7 @@ absl::StatusOr<std::vector<CustomKernel>> GetCkGemmKernels(
                       std::vector<CustomKernel>>
       kernels = {
           {{F16, F16, F16},
-           {Load<F16xF16ToF16>(name, m, n, k, indices, slices, device)}}};
+           {Load<F16xF16ToF16>(name, m, n, k, indices, device)}}};
 
   auto loaded_kernels = kernels.find({lhs_type, rhs_type, dot_type});
   if (loaded_kernels != kernels.end()) {

@@ -48,15 +48,15 @@ TEST(CkGemmKernelTest, SimpleGemm) {
   TF_ASSERT_OK_AND_ASSIGN(
       auto custom_kernels,
       GetCkGemmKernels("ck_gemm", PrimitiveType::F16,
-                       PrimitiveType::F16, PrimitiveType::F16, 4, 4, 4,
-                       /*indices=*/{0, 1, 2}, /*slices=*/{},
+                       PrimitiveType::F16, PrimitiveType::F16, 16, 16, 16,
+                       /*indices=*/{0, 1, 2},
                        executor->GetDeviceDescription()));
   auto custom_kernel = custom_kernels[0];
 
   TF_ASSERT_OK_AND_ASSIGN(auto gemm,
                           executor->LoadKernel(custom_kernel.kernel_spec()));
 
-  int64_t length = 4 * 4;
+  int64_t length = 16*16;
   int64_t byte_length = sizeof(__half) * length;
 
   // Prepare arguments: a=2, b=2, c=0 (using FP16)
@@ -88,7 +88,7 @@ TEST(CkGemmKernelTest, SimpleGemm) {
   TF_ASSERT_OK(stream->Memcpy(dst.data(), c, byte_length));
 
   // Expected result: 2.0 * 2.0 = 4.0 for each element, 4x4 GEMM gives 4*4.0 = 16.0
-  std::vector<__half> expected(length, __float2half(16.0f));
+  std::vector<__half> expected(length, __float2half(16.*4.0f));
   ASSERT_EQ(dst, expected);
 }
 
