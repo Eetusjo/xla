@@ -1,4 +1,5 @@
 load("@local_config_cuda//cuda:build_defs.bzl", "cuda_library")
+load("@local_config_rocm//rocm:build_defs.bzl", "if_rocm_is_configured", "rocm_library")
 load("//xla:xla.default.bzl", "xla_cc_binary")
 load("//xla/tests:build_defs.bzl", "DEFAULT_DISABLED_BACKENDS", "xla_test")
 load("//xla/tsl:tsl.bzl", "if_windows")
@@ -406,5 +407,114 @@ xla_test(
         "//xla/tsl/platform:test_main",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
+    ],
+)
+
+#===--------------------------------------------------------------------------------------------===#
+# CK GEMM Universal-base kernels <-> StreamExecutor adaptor
+#===--------------------------------------------------------------------------------------------===#
+
+cc_library(
+    name = "ck_gemm",
+    hdrs = ["ck_gemm.h"],
+    deps = ["//xla/tsl/platform:logging"],
+)
+
+rocm_library(
+    name = "ck_gemm_adaptor",
+    hdrs = ["ck_gemm_adaptor.cu.h"],
+    tags = [
+        "gpu",
+        "rocm-only",
+    ],
+    deps = [
+        ":ck_gemm",
+        "@ck_archive//:ck",
+        "@local_config_rocm//rocm:rocm_headers",
+    ],
+)
+
+#===--------------------------------------------------------------------------------------------===#
+# CK GEMM kernel implementations
+#===--------------------------------------------------------------------------------------------===#
+
+# Individual CK kernel implementations - split for parallel compilation
+rocm_library(
+    name = "ck_gemm_kernels",
+    tags = [
+        "gpu", 
+        "rocm-only",
+    ],
+    deps = [
+        ":ck_gemm_kernel_f32xf32_to_f32",
+    ],
+)
+
+rocm_library(
+    name = "ck_gemm_kernel_f32xf32_to_f32",
+    srcs = ["ck_gemm_kernel_f32xf32_to_f32.cu.cc"],
+    tags = [
+        "gpu",
+        "rocm-only",
+    ],
+    deps = [
+        ":ck_gemm_adaptor",
+        "@ck_archive//:ck",
+    ],
+)
+
+#===--------------------------------------------------------------------------------------------===#
+# CK GEMM custom kernel library
+#===--------------------------------------------------------------------------------------------===#
+
+cc_library(
+    name = "ck_gemm_custom_kernel",
+    srcs = ["ck_gemm_custom_kernel.cc"],
+    hdrs = ["ck_gemm_custom_kernel.h"],
+    tags = [
+        "gpu",
+        "rocm-only",
+    ],
+    deps = [
+        ":ck_gemm",
+        ":ck_gemm_kernels",
+        ":custom_kernel",
+        "//xla:xla_data_proto_cc",
+        "//xla/stream_executor:device_description",
+        "//xla/stream_executor:kernel",
+        "//xla/stream_executor:kernel_spec",
+        "//xla/stream_executor:launch_dim",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+xla_test(
+    name = "ck_gemm_custom_kernel_test",
+    srcs = ["ck_gemm_custom_kernel_test.cc"],
+    backends = ["gpu"],
+    tags = [
+        "gpu",
+        "rocm-only",
+    ],
+    deps = [
+        ":ck_gemm_custom_kernel",
+        "//xla:xla_data_proto_cc",
+        "//xla/stream_executor:device_memory",
+        "//xla/stream_executor:kernel",
+        "//xla/stream_executor:platform",
+        "//xla/stream_executor:platform_manager",
+        "//xla/stream_executor:stream",
+        "//xla/stream_executor:stream_executor_h",
+        "//xla/stream_executor/rocm:rocm_platform",
+        "//xla/tsl/lib/core:status_test_util",
+        "//xla/tsl/platform:statusor",
+        "//xla/tsl/platform:test",
+        "//xla/tsl/platform:test_main",
+        "@com_google_googletest//:gtest",
+        "@tsl//tsl/platform:path",
     ],
 )
