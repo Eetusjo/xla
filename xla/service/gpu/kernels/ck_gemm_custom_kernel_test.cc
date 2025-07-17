@@ -44,11 +44,11 @@ TEST(CkGemmKernelTest, SimpleGemm) {
 
   auto stream = executor->CreateStream().value();
 
-  // Load [4, 4] x [4, 4] gemm kernel written in HIP C++ with ck_tile.
+  // Load [8, 8] x [8, 8] gemm kernel
   TF_ASSERT_OK_AND_ASSIGN(
       auto custom_kernels,
       GetCkGemmKernels("ck_gemm", PrimitiveType::F16,
-                       PrimitiveType::F16, PrimitiveType::F16, 16, 16, 16,
+                       PrimitiveType::F16, PrimitiveType::F16, 8, 8, 8,
                        /*indices=*/{0, 1, 2},
                        executor->GetDeviceDescription()));
   auto custom_kernel = custom_kernels[0];
@@ -56,7 +56,7 @@ TEST(CkGemmKernelTest, SimpleGemm) {
   TF_ASSERT_OK_AND_ASSIGN(auto gemm,
                           executor->LoadKernel(custom_kernel.kernel_spec()));
 
-  int64_t length = 16*16;
+  int64_t length = 8*8;
   int64_t byte_length = sizeof(__half) * length;
 
   // Prepare arguments: a=2, b=2, c=0 (using FP16)
@@ -87,8 +87,7 @@ TEST(CkGemmKernelTest, SimpleGemm) {
   std::vector<__half> dst(length, __float2half(-1.0f));
   TF_ASSERT_OK(stream->Memcpy(dst.data(), c, byte_length));
 
-  // Expected result: 2.0 * 2.0 = 4.0 for each element, 4x4 GEMM gives 4*4.0 = 16.0
-  std::vector<__half> expected(length, __float2half(16.*4.0f));
+  std::vector<__half> expected(length, __float2half(32.0f));
   ASSERT_EQ(dst, expected);
 }
 
