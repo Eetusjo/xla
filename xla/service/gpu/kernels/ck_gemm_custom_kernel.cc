@@ -164,7 +164,6 @@ static CustomKernel Load(std::string name, int32_t m, int32_t n, int32_t k,
                          Adaptor<Tag> adaptor = {},
                          DeviceKernel<Tag> kernel = {}) {
   // Get the dispatch grid size and shared memory requirements.
-  auto cluster_dim = As<se::ClusterDim>(adaptor.ClusterDim());
   auto block_dim = As<se::BlockDim>(adaptor.BlockDim(m, n, k));
   auto thread_dim = As<se::ThreadDim>(adaptor.ThreadDim());
   auto shared_memory_bytes = adaptor.SharedMemoryBytes();
@@ -174,11 +173,6 @@ static CustomKernel Load(std::string name, int32_t m, int32_t n, int32_t k,
 
   se::KernelLoaderSpec spec = se::KernelLoaderSpec::CreateInProcessSymbolSpec(
       kernel.symbol(), name, /*arity=*/1, std::move(packing));
-
-  if (cluster_dim.has_value()) {
-    return CustomKernel(std::move(name), std::move(spec), block_dim, thread_dim,
-                        *cluster_dim, shared_memory_bytes);
-  }
 
   return CustomKernel(std::move(name), std::move(spec), block_dim, thread_dim,
                       shared_memory_bytes);
