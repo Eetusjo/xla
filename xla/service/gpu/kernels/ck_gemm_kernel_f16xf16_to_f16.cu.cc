@@ -25,7 +25,7 @@ namespace xla::gpu::kernel::gemm_universal {
 // FP16 Universal GEMM Kernel Configuration  
 //===----------------------------------------------------------------------===//
 
-// Use conservative tile sizes that work well for most FP16 problems
+// Use smaller, more conservative tile sizes to avoid hardware limitations
 constexpr ck_tile::index_t M_Tile = 128;
 constexpr ck_tile::index_t N_Tile = 128;
 constexpr ck_tile::index_t K_Tile = 32;
@@ -39,19 +39,19 @@ constexpr ck_tile::index_t N_Warp_Tile = 32;
 constexpr ck_tile::index_t K_Warp_Tile = 8;
 
 // Universal GEMM configuration
-constexpr bool kPadM = false;
-constexpr bool kPadN = false;
-constexpr bool kPadK = false;
+constexpr bool kPadM = true;
+constexpr bool kPadN = true;
+constexpr bool kPadK = true;
 constexpr bool TransposeC = false;
 
 // Tile partitioner configuration
 constexpr ck_tile::index_t TilePartitionerGroupNum = 8;
 constexpr ck_tile::index_t TilePartitionerM01 = 4;
 
-// Simplified pipeline configuration - no hot loop analysis for now
+// Use the most basic pipeline configuration to avoid hardware compatibility issues
 constexpr bool has_hot_loop = false;
-constexpr ck_tile::TailNumber tail_number = ck_tile::TailNumber::Full;
-constexpr auto scheduler = ck_tile::GemmPipelineScheduler::Interwave;
+constexpr ck_tile::TailNumber tail_number = ck_tile::TailNumber::One;
+constexpr auto scheduler = ck_tile::GemmPipelineScheduler::Intrawave;
 
 // Data types - use FP16 for better CK tile support
 using ADataType = ck_tile::half_t;
