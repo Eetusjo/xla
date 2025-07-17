@@ -79,13 +79,13 @@ using TilePartitioner = ck_tile::GemmSpatiallyLocalTilePartitioner<
     GemmShape, TilePartitionerGroupNum, TilePartitionerM01>;
 
 // Define the traits
-using Traits = ck_tile::TileGemmTraits<kPadM, kPadN, kPadK, ALayout, BLayout, CLayout>;
+using TileGemmTraits = ck_tile::TileGemmTraits<kPadM, kPadN, kPadK, ALayout, BLayout, CLayout>;
 using GemmUniversalTraits = ck_tile::TileGemmUniversalTraits<
     kPadM, kPadN, kPadK, ALayout, BLayout, CLayout, TransposeC>;
 
 // Define the pipeline problem
 using GemmPipelineProblem = ck_tile::GemmPipelineProblem<
-    ADataType, BDataType, AccDataType, GemmShape, Traits>;
+    ADataType, BDataType, AccDataType, GemmShape, TileGemmTraits>;
 
 // Define the universal pipeline problem
 using UniversalGemmProblem = ck_tile::UniversalGemmPipelineProblem<
