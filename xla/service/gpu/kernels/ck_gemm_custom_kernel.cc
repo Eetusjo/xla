@@ -1,0 +1,221 @@
+/* Copyright 2023 The OpenXLA Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+==============================================================================*/
+
+#include "xla/service/gpu/kernels/ck_gemm_custom_kernel.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+#include "absl/container/flat_hash_map.h"
+#include "absl/log/log.h"
+#include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
+#include "xla/service/gpu/kernels/custom_kernel.h"
+#include "xla/service/gpu/kernels/ck_gemm.h"
+#include "xla/stream_executor/device_description.h"
+#include "xla/stream_executor/kernel.h"
+#include "xla/stream_executor/kernel_spec.h"
+#include "xla/stream_executor/launch_dim.h"
+#include "xla/xla_data.pb.h"
+
+namespace xla::gpu::kernel::gemm_universal {
+
+// Each individual CK kernel adaptor will be compiled in a separate
+// rocm_library and linked into the `ck_gemm_custom_kernels` target. We use
+// this approach for a few reasons:
+//
+//   - It enables parallel compilation of CK templates which in practice
+//     becomes quite expensive for any non-trivial GEMM.
+//
+//   - We do not include any of the CK headers in our custom kernel
+//     library which would require converting it to a rocm_library, and we
+//     want to minimize the number of headers included in .cu.cc files as
+//     HIP compiler does not particularly like complex templates.
+//
+extern template class Adaptor<F32xF32ToF32>;
+extern template class DeviceKernel<F32xF32ToF32>;
+
+//===----------------------------------------------------------------------===//
+// CK kernel arguments packing
+//===----------------------------------------------------------------------===//
+
+using KernelArgsPacking = se::KernelLoaderSpec::KernelArgsPacking;
+
+template <typename Dim>
+static Dim As(Dim3 dim3) {
+  return Dim(dim3.x, dim3.y, dim3.z);
+}
+
+template <typename Dim>
+static std::optional<Dim> As(std::optional<Dim3> dim3) {
+  if (dim3.has_value()) return Dim(dim3->x, dim3->y, dim3->z);
+  return std::nullopt;
+}
+
+// Returns a pointer to device memory holding a slice offset.
+static int32_t* SlicePtr(const se::KernelArgsDeviceMemoryArray* args,
+                         int64_t index) {
+  const void* opaque = args->device_memory_ptr(index);
+  return static_cast<int32_t*>(const_cast<void*>(opaque));
+}
+
+template <typename Tag>
+KernelArgsPacking ArgsPacking(int32_t m, int32_t n, int32_t k, 
+                              const ArgsIndices& indices,
+                              const DynamicSliceIndices& slices,
+                              int32_t device_sms, Adaptor<Tag> adaptor) {
+  using Packed = absl::StatusOr<std::unique_ptr<se::KernelArgsPackedArrayBase>>;
+
+  // CK kernel arguments storage. We use a similar approach to CUTLASS.
+  // TODO(esjoblom): CK kernel arguments struct not necessarily trivially
+  // destructible or even trivially copyable, we have to own the life time of an
+  // object constructed in the storage. For now we ignore it, and it's textbook
+  // definition of UB, but for CK kernels we use today it's perfectly safe.
+  struct CkKernelArgs {
+#if defined(_MSC_VER)
+    alignas(64) std::byte storage[1024];
+#else
+    alignas(128) std::byte storage[1024];
+#endif
+  };
+
+  return [=](const se::Kernel& kernel, const se::KernelArgs& args) -> Packed {
+    auto* mem_args = se::Cast<se::KernelArgsDeviceMemoryArray>(&args);
+
+    // Convert XLA Arguments to CK GemmHostArgs format
+    Arguments xla_arguments;
+    xla_arguments.lhs = const_cast<void*>(mem_args->device_memory_ptr(indices.lhs));
+    xla_arguments.rhs = const_cast<void*>(mem_args->device_memory_ptr(indices.rhs));
+    xla_arguments.out = const_cast<void*>(mem_args->device_memory_ptr(indices.out));
+    
+    // Set up matrix dimensions
+    xla_arguments.M = m;
+    xla_arguments.N = n;
+    xla_arguments.K = k;
+    
+    // For basic GEMM, we use simple row-major strides
+    // TODO(esjoblom): Handle different layouts and strides properly
+    xla_arguments.stride_A = k;  // Row-major: stride = number of columns
+    xla_arguments.stride_B = n;  // Row-major: stride = number of columns  
+    xla_arguments.stride_C = n;  // Row-major: stride = number of columns
+    
+    // Set k_batch to 1 for basic GEMM (no split-K)
+    xla_arguments.k_batch = 1;
+
+    // Set up dynamic slices if they are available.
+    if (slices.out.has_value()) {
+      xla_arguments.slices.out = SlicePtr(mem_args, *slices.out);
+    }
+
+    // TODO(esjoblom): Add proper validation for supported configurations
+    // For now, assume all reasonable GEMM sizes are supported
+
+    auto threads = As<se::ThreadDim>(adaptor.ThreadDim());
+    auto shmem_bytes = adaptor.SharedMemoryBytes();
+
+    // We keep max_occupancy in a static variable as currently for all
+    // practical purposes all stream executors in the process have identical
+    // underlying devices, and there is no need to repeatedly query this
+    // property.
+    static int32_t sm_occupancy =
+        kernel.GetMaxOccupiedBlocksPerCore(threads, shmem_bytes).value_or(1);
+
+    // TODO(esjoblom): In theory when sm_occupancy is 0 we should not be able
+    // to run kernels, and we could return error here, however in practice
+    // it's not true, and kernels with 0 occupancy run just fine! Figure out
+    // where is the problem, and how we can reliably use sm occupancy numbers.
+    if (sm_occupancy == 0) {
+      LOG_FIRST_N(WARNING, 1)
+          << "CK gemm kernel reported 0 occupancy: threads_per_block="
+          << (threads.x * threads.y * threads.z)
+          << ", dynamic_shared_memory_bytes=" << shmem_bytes;
+    }
+
+    // Initialize parameters storage using adaptor.
+    CkKernelArgs ck_args;
+    adaptor.Initialize(&ck_args, xla_arguments, device_sms);
+
+    // TODO(esjoblom): We need to support EmplaceKernelArgs with inplace
+    // construction to avoid copying 1kb of byte storage.
+    //
+    // TODO(esjoblom): Remove `DynamicSliceArguments` once we encode
+    // dynamic slice offsets in kernel parameters.
+    return se::PackKernelArgs<CkKernelArgs, DynamicSliceArguments>(
+        args.number_of_shared_bytes(), ck_args, xla_arguments.slices);
+  };
+}
+
+//===----------------------------------------------------------------------===//
+
+template <typename Tag>
+static CustomKernel Load(std::string name, int32_t m, int32_t n, int32_t k,
+                         const ArgsIndices& indices,
+                         const DynamicSliceIndices& slices,
+                         const se::DeviceDescription& device,
+                         Adaptor<Tag> adaptor = {},
+                         DeviceKernel<Tag> kernel = {}) {
+  // Get the dispatch grid size and shared memory requirements.
+  auto cluster_dim = As<se::ClusterDim>(adaptor.ClusterDim());
+  auto block_dim = As<se::BlockDim>(adaptor.BlockDim(m, n, k));
+  auto thread_dim = As<se::ThreadDim>(adaptor.ThreadDim());
+  auto shared_memory_bytes = adaptor.SharedMemoryBytes();
+
+  auto packing = ArgsPacking<Tag>(m, n, k, indices, slices,
+                                  device.core_count(), adaptor);
+
+  se::KernelLoaderSpec spec = se::KernelLoaderSpec::CreateInProcessSymbolSpec(
+      kernel.symbol(), name, /*arity=*/2, std::move(packing));
+
+  if (cluster_dim.has_value()) {
+    return CustomKernel(std::move(name), std::move(spec), block_dim, thread_dim,
+                        *cluster_dim, shared_memory_bytes);
+  }
+
+  return CustomKernel(std::move(name), std::move(spec), block_dim, thread_dim,
+                      shared_memory_bytes);
+}
+
+absl::StatusOr<std::vector<CustomKernel>> GetCkGemmKernels(
+    std::string name, PrimitiveType dot_type, PrimitiveType lhs_type,
+    PrimitiveType rhs_type, int32_t m, int32_t n, int32_t k,
+    const ArgsIndices& indices, const DynamicSliceIndices& slices,
+    const se::DeviceDescription& device) {
+  // Lookup table for supported kernels.
+  // LHS_TYPE, RHS_TYPE, DOT_TYPE -> [kernel]
+  absl::flat_hash_map<std::tuple<PrimitiveType, PrimitiveType, PrimitiveType>,
+                      std::vector<CustomKernel>>
+      kernels = {
+          {{F32, F32, F32},
+           {Load<F32xF32ToF32>(name, m, n, k, indices, slices, device)}}};
+
+  auto loaded_kernels = kernels.find({lhs_type, rhs_type, dot_type});
+  if (loaded_kernels != kernels.end()) {
+    return loaded_kernels->second;
+  } else {
+    std::string kernel_name = PrimitiveType_Name(lhs_type) + "x" +
+                              PrimitiveType_Name(rhs_type) + "To" +
+                              PrimitiveType_Name(dot_type);
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Unsupported CK gemm data type for kernel: ", kernel_name));
+  }
+}
+
+}  // namespace xla::gpu::kernel::gemm_universal

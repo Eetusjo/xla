@@ -32,6 +32,12 @@ namespace xla::gpu::kernel::gemm_universal {
 // device kernels into C++ API to make them launchable on streams.
 
 template <typename Tag>
+std::optional<Dim3> Adaptor<Tag>::ClusterDim() const {
+  // CK does not use cluster dimensions, so return nullopt
+  return std::nullopt;
+}
+
+template <typename Tag>
 Dim3 Adaptor<Tag>::ThreadDim() const {
   auto block_shape = Traits<Tag>::Kernel::BlockSize();
   return Dim3{block_shape.x, block_shape.y, block_shape.z};
