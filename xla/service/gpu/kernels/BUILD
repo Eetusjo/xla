@@ -459,6 +459,35 @@ cc_library(
     alwayslink = 1,  # static fusion registration
 )
 
+xla_test(
+    name = "ck_gemm_fusion_test",
+    srcs = ["ck_gemm_fusion_test.cc"],
+    backends = ["gpu"],
+    tags = ["rocm-only"],
+    deps = [
+        ":custom_kernel_fusion_pattern",
+        ":ck_gemm_custom_kernel",
+        ":ck_gemm_fusion",
+        "//xla:array",
+        "//xla:array2d",
+        "//xla:array3d",
+        "//xla:error_spec",
+        "//xla:literal_util",
+        "//xla:types",
+        "//xla:xla_data_proto_cc",
+        "//xla/service/gpu:gpu_device_info_for_tests",
+        "//xla/service/gpu/transforms:custom_kernel_fusion_rewriter",
+        "//xla/stream_executor:device_description",
+        "//xla/tests:hlo_test_base",
+        "//xla/tsl/platform:test",
+        "//xla/tsl/platform:test_main",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+
 #===--------------------------------------------------------------------------------------------===#
 # CK GEMM Universal-base kernels <-> StreamExecutor adaptor
 #===--------------------------------------------------------------------------------------------===#

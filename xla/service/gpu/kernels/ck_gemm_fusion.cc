@@ -121,7 +121,7 @@ absl::StatusOr<std::vector<CustomKernel>> CkGemmFusion::LoadKernels(
 
   // Call the CK GEMM kernel creation function
   return GetCkGemmKernels("ck_gemm", dot_type, lhs_type, rhs_type,
-                          m, n, k, indices, /*slices=*/{}, device);
+                          m, n, k, indices, device);
 }
 
 //===----------------------------------------------------------------------===//
