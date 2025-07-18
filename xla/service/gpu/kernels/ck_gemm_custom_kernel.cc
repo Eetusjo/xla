@@ -83,11 +83,6 @@ KernelArgsPacking ArgsPacking(int32_t m, int32_t n, int32_t k,
                               int32_t device_sms, Adaptor<Tag> adaptor) {
   using Packed = absl::StatusOr<std::unique_ptr<se::KernelArgsPackedArrayBase>>;
 
-  // CK kernel arguments storage. We use a similar approach to CUTLASS.
-  // TODO(esjoblom): CK kernel arguments struct not necessarily trivially
-  // destructible or even trivially copyable, we have to own the life time of an
-  // object constructed in the storage. For now we ignore it, and it's textbook
-  // definition of UB, but for CK kernels we use today it's perfectly safe.
   struct CkKernelArgs {
 #if defined(_MSC_VER)
     alignas(64) std::byte storage[1024];
@@ -111,45 +106,25 @@ KernelArgsPacking ArgsPacking(int32_t m, int32_t n, int32_t k,
     xla_arguments.K = k;
     
     // For basic GEMM, we use simple row-major strides
-    // TODO(esjoblom): Handle different layouts and strides properly
     xla_arguments.stride_A = k;  // Row-major: stride = number of columns
     xla_arguments.stride_B = n;  // Row-major: stride = number of columns  
     xla_arguments.stride_C = n;  // Row-major: stride = number of columns
-    
-    // Set k_batch to 1 for basic GEMM (no split-K)
-    xla_arguments.k_batch = 1;
 
-    // TODO(esjoblom): Add proper validation for supported configurations
-    // For now, assume all reasonable GEMM sizes are supported
+    // todo(esjoblom): Do not hard-code 32 here, but grab from the kernel def
+    int32_t k_batch = (k + 31) / 32;
+    xla_arguments.k_batch = k_batch;
 
-    auto threads = As<se::ThreadDim>(adaptor.ThreadDim());
-    auto shmem_bytes = adaptor.SharedMemoryBytes();
+    LOG(INFO) << "GEMM: M=" << m << " N=" << n << " K=" << k
+              << " k_batch=" << xla_arguments.k_batch
+              << " stride_A=" << xla_arguments.stride_A
+              << " stride_B=" << xla_arguments.stride_B
+              << " stride_C=" << xla_arguments.stride_C;
 
-    // We keep max_occupancy in a static variable as currently for all
-    // practical purposes all stream executors in the process have identical
-    // underlying devices, and there is no need to repeatedly query this
-    // property.
-    static int32_t sm_occupancy =
-        kernel.GetMaxOccupiedBlocksPerCore(threads, shmem_bytes).value_or(1);
-
-    // TODO(esjoblom): In theory when sm_occupancy is 0 we should not be able
-    // to run kernels, and we could return error here, however in practice
-    // it's not true, and kernels with 0 occupancy run just fine! Figure out
-    // where is the problem, and how we can reliably use sm occupancy numbers.
-    if (sm_occupancy == 0) {
-      LOG_FIRST_N(WARNING, 1)
-          << "CK gemm kernel reported 0 occupancy: threads_per_block="
-          << (threads.x * threads.y * threads.z)
-          << ", dynamic_shared_memory_bytes=" << shmem_bytes;
-    }
 
     // Initialize parameters storage using adaptor.
     CkKernelArgs ck_args;
     adaptor.Initialize(&ck_args, xla_arguments, device_sms);
 
-    // TODO(esjoblom): We need to support EmplaceKernelArgs with inplace
-    // construction to avoid copying 1kb of byte storage.
-    //
     return se::PackKernelArgs<CkKernelArgs>(
         args.number_of_shared_bytes(), ck_args);
   };

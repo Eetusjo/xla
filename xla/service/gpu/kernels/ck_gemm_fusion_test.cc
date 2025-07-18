@@ -60,9 +60,9 @@ TEST_F(CkFusionTest, RowMajorGemmKernel) {
   const char* hlo_text_ref = R"(
   HloModule test
 
-  ENTRY %main (p0: f16[256,256], p1: f16[256,256]) -> f16[256,256] {
-    %p0 = f16[256,256]{1,0} parameter(0)
-    %p1 = f16[256,256]{1,0} parameter(1)
+  ENTRY %main (p0: f16[256,64], p1: f16[64,256]) -> f16[256,256] {
+    %p0 = f16[256,64]{1,0} parameter(0)
+    %p1 = f16[64,256]{1,0} parameter(1)
     ROOT %r = f16[256,256]{1,0} dot(%p0, %p1),
       lhs_contracting_dims={1}, rhs_contracting_dims={0}
   })";
@@ -71,15 +71,15 @@ TEST_F(CkFusionTest, RowMajorGemmKernel) {
   HloModule ck
 
   ck_gemm {
-    arg0 = f16[256,256]{1,0} parameter(0)
-    arg1 = f16[256,256]{1,0} parameter(1)
+    arg0 = f16[256,64]{1,0} parameter(0)
+    arg1 = f16[64,256]{1,0} parameter(1)
     ROOT dot = f16[256,256]{1,0} dot(arg0, arg1),
       lhs_contracting_dims={1}, rhs_contracting_dims={0}
   }
 
   ENTRY e {
-    arg0 = f16[256,256]{1,0} parameter(0)
-    arg1 = f16[256,256]{1,0} parameter(1)
+    arg0 = f16[256,64]{1,0} parameter(0)
+    arg1 = f16[64,256]{1,0} parameter(1)
     ROOT _ = f16[256,256]{1,0} fusion(arg0, arg1), kind=kCustom, calls=ck_gemm,
       backend_config={"fusion_backend_config":{kind: "__custom_fusion", custom_fusion_config: {"name":"ck_gemm", "kernel_index":0}}}
   })";

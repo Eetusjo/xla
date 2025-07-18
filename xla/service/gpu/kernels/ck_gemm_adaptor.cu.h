@@ -21,6 +21,8 @@ limitations under the License.
 #include <memory>
 #include <optional>
 
+#include "ck_tile/host/kernel_launch.hpp"
+
 #include "xla/service/gpu/kernels/ck_gemm.h"
 
 namespace xla::gpu::kernel::gemm_universal {
@@ -39,7 +41,9 @@ Dim3 Adaptor<Tag>::ThreadDim() const {
 
 template <typename Tag>
 Dim3 Adaptor<Tag>::BlockDim(int32_t m, int32_t n, int32_t k) const {
-  auto grid = Traits<Tag>::Kernel::GridSize(m, n, 1);
+  // todo(esjoblom): Do not hard-code 32 here, but grab from the kernel def
+  int32_t k_batch = (k + 31) / 32;
+  auto grid = Traits<Tag>::Kernel::GridSize(m, n, k_batch);
   return Dim3{grid.x, grid.y, grid.z};
 }
 
@@ -76,16 +80,11 @@ void Adaptor<Tag>::Initialize(void *params, const Arguments &args,
   };
 }
 
-template <typename Kernel>
-__global__ void KernelEntryPoint(const typename Kernel::GemmKernelArgs args) {
-  Kernel{}(args);
-}
-
 template <typename Tag>
 void *DeviceKernel<Tag>::symbol() const {
   using Kernel = typename Traits<Tag>::Kernel;
   using Arguments = typename Traits<Tag>::Arguments;
-  return reinterpret_cast<void *>(KernelEntryPoint<Kernel>);
+  return reinterpret_cast<void *>(ck_tile::kentry<CK_TILE_MAX_THREAD_PER_BLOCK, CK_TILE_MIN_BLOCK_PER_CU, Kernel, Arguments>);
 };
 
 //===----------------------------------------------------------------------===//

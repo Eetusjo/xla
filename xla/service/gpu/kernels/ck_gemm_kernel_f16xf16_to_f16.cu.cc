@@ -25,7 +25,6 @@ namespace xla::gpu::kernel::gemm_universal {
 // FP16 Universal GEMM Kernel Configuration  
 //===----------------------------------------------------------------------===//
 
-// Use smaller, more conservative tile sizes to avoid hardware limitations
 constexpr ck_tile::index_t M_Tile = 128;
 constexpr ck_tile::index_t N_Tile = 128;
 constexpr ck_tile::index_t K_Tile = 32;
@@ -38,28 +37,23 @@ constexpr ck_tile::index_t M_Warp_Tile = 32;
 constexpr ck_tile::index_t N_Warp_Tile = 32;
 constexpr ck_tile::index_t K_Warp_Tile = 8;
 
-// Universal GEMM configuration
 constexpr bool kPadM = true;
 constexpr bool kPadN = true;
 constexpr bool kPadK = true;
 constexpr bool TransposeC = false;
 
-// Tile partitioner configuration
 constexpr ck_tile::index_t TilePartitionerGroupNum = 8;
 constexpr ck_tile::index_t TilePartitionerM01 = 4;
 
-// Use the most basic pipeline configuration to avoid hardware compatibility issues
 constexpr bool has_hot_loop = false;
 constexpr ck_tile::TailNumber tail_number = ck_tile::TailNumber::One;
 constexpr auto scheduler = ck_tile::GemmPipelineScheduler::Intrawave;
 
-// Data types - use FP16 for better CK tile support
 using ADataType = ck_tile::half_t;
 using BDataType = ck_tile::half_t;
-using AccDataType = float;  // Use F32 accumulation for better precision
+using AccDataType = float;
 using CDataType = ck_tile::half_t;
 
-// Layouts - assume row-major for all matrices
 using ALayout = ck_tile::tensor_layout::gemm::RowMajor;
 using BLayout = ck_tile::tensor_layout::gemm::RowMajor;
 using CLayout = ck_tile::tensor_layout::gemm::RowMajor;
@@ -68,35 +62,28 @@ using CLayout = ck_tile::tensor_layout::gemm::RowMajor;
 // Universal GEMM Kernel Assembly
 //===----------------------------------------------------------------------===//
 
-// Define the GEMM shape
 using GemmShape = ck_tile::TileGemmShape<
     ck_tile::sequence<M_Tile, N_Tile, K_Tile>,
     ck_tile::sequence<M_Warp, N_Warp, K_Warp>,
     ck_tile::sequence<M_Warp_Tile, N_Warp_Tile, K_Warp_Tile>>;
 
-// Define the tile partitioner
 using TilePartitioner = ck_tile::GemmSpatiallyLocalTilePartitioner<
     GemmShape, TilePartitionerGroupNum, TilePartitionerM01>;
 
-// Define the traits
 using TileGemmTraits = ck_tile::TileGemmTraits<kPadM, kPadN, kPadK, ALayout, BLayout, CLayout>;
 using GemmUniversalTraits = ck_tile::TileGemmUniversalTraits<
     kPadM, kPadN, kPadK, ALayout, BLayout, CLayout, TransposeC>;
 
-// Define the pipeline problem
 using GemmPipelineProblem = ck_tile::GemmPipelineProblem<
     ADataType, BDataType, AccDataType, GemmShape, TileGemmTraits>;
 
-// Define the universal pipeline problem
 using UniversalGemmProblem = ck_tile::UniversalGemmPipelineProblem<
     ADataType, BDataType, AccDataType, GemmShape, GemmUniversalTraits, 
     scheduler, has_hot_loop, tail_number>;
 
-// Define the pipeline
 using GemmPipeline = ck_tile::GemmPipelineAgBgCrMem<
     UniversalGemmProblem, ck_tile::UniversalGemmPipelineAgBgCrPolicy>;
 
-// Define the epilogue
 using GemmEpilogue = ck_tile::CShuffleEpilogue<
     ck_tile::CShuffleEpilogueProblem<
         AccDataType, CDataType, CLayout,
@@ -107,13 +94,10 @@ using GemmEpilogue = ck_tile::CShuffleEpilogue<
         M_Warp_Tile, N_Warp_Tile, K_Warp_Tile,
         UniversalGemmProblem::TransposeC>>;
 
-// Assemble the final kernel
 using CkGemmKernel = ck_tile::GemmKernel<TilePartitioner, GemmPipeline, GemmEpilogue>;
 
-// Register the kernel with the XLA traits system
 XLA_GPU_DEFINE_CK_GEMM_TRAITS(F16xF16ToF16, CkGemmKernel);
 
-// Explicit template instantiation for the adaptor system
 template class Adaptor<F16xF16ToF16>;
 template class DeviceKernel<F16xF16ToF16>;
 
