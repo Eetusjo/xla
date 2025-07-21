@@ -525,12 +525,26 @@ rocm_library(
     ],
     deps = [
         ":ck_gemm_kernel_f16xf16_to_f16",
+        ":ck_gemm_kernel_bf16xbf16_to_bf16",
     ],
 )
 
 rocm_library(
     name = "ck_gemm_kernel_f16xf16_to_f16",
     srcs = ["ck_gemm_kernel_f16xf16_to_f16.cu.cc"],
+    tags = [
+        "gpu",
+        "rocm-only",
+    ],
+    deps = [
+        ":ck_gemm_adaptor",
+        "@ck_archive//:ck",
+    ],
+)
+
+rocm_library(
+    name = "ck_gemm_kernel_bf16xbf16_to_bf16",
+    srcs = ["ck_gemm_kernel_bf16xbf16_to_bf16.cu.cc"],
     tags = [
         "gpu",
         "rocm-only",

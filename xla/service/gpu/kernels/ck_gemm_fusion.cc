@@ -41,7 +41,7 @@ namespace {
 // Returns OK if dot instruction is compatible with CK GEMM kernels.
 absl::Status MatchCkGemm(HloDotInstruction* dot) {
   // Use shared helper for basic GEMM validation
-  TF_RETURN_IF_ERROR(MatchSimpleGemm(dot, {PrimitiveType::F16}));
+  TF_RETURN_IF_ERROR(MatchSimpleGemm(dot, {PrimitiveType::F16, PrimitiveType::BF16}));
   
   return absl::OkStatus();
 }
@@ -93,7 +93,7 @@ absl::StatusOr<std::vector<CustomKernel>> CkGemmFusion::LoadKernels(
   }
 
   // Validate that this is a supported GEMM operation
-  TF_RETURN_IF_ERROR(MatchSimpleGemm(dot, {PrimitiveType::F16}));
+  TF_RETURN_IF_ERROR(MatchSimpleGemm(dot, {PrimitiveType::F16, PrimitiveType::BF16}));
 
   // Extract data types
   PrimitiveType dot_type = dot->shape().element_type();

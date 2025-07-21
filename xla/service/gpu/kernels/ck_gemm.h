@@ -44,6 +44,7 @@ namespace xla::gpu::kernel::gemm_universal {
 // break a dependency on them from XLA.
 
 struct F16xF16ToF16 {};
+struct BF16xBF16ToBF16 {};
 
 // Matches GemmKernelArguments in ck_tile
 struct Arguments {

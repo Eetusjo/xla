@@ -53,6 +53,9 @@ namespace xla::gpu::kernel::gemm_universal {
 extern template class Adaptor<F16xF16ToF16>;
 extern template class DeviceKernel<F16xF16ToF16>;
 
+extern template class Adaptor<BF16xBF16ToBF16>;
+extern template class DeviceKernel<BF16xBF16ToBF16>;
+
 //===----------------------------------------------------------------------===//
 // CK kernel arguments packing
 //===----------------------------------------------------------------------===//
@@ -164,7 +167,9 @@ absl::StatusOr<std::vector<CustomKernel>> GetCkGemmKernels(
                       std::vector<CustomKernel>>
       kernels = {
           {{F16, F16, F16},
-           {Load<F16xF16ToF16>(name, m, n, k, indices, device)}}};
+           {Load<F16xF16ToF16>(name, m, n, k, indices, device)}},
+          {{BF16, BF16, BF16},
+           {Load<BF16xBF16ToBF16>(name, m, n, k, indices, device)}}};
 
   auto loaded_kernels = kernels.find({lhs_type, rhs_type, dot_type});
   if (loaded_kernels != kernels.end()) {
