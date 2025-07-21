@@ -50,8 +50,8 @@ namespace xla::gpu::kernel::gemm_universal {
 //     want to minimize the number of headers included in .cu.cc files as
 //     HIP compiler does not particularly like complex templates.
 //
-extern template class Adaptor<F32xF32ToF32>;
-extern template class DeviceKernel<F32xF32ToF32>;
+extern template class Adaptor<F16xF16ToF16>;
+extern template class DeviceKernel<F16xF16ToF16>;
 
 //===----------------------------------------------------------------------===//
 // CK kernel arguments packing
@@ -203,8 +203,8 @@ absl::StatusOr<std::vector<CustomKernel>> GetCkGemmKernels(
   absl::flat_hash_map<std::tuple<PrimitiveType, PrimitiveType, PrimitiveType>,
                       std::vector<CustomKernel>>
       kernels = {
-          {{F32, F32, F32},
-           {Load<F32xF32ToF32>(name, m, n, k, indices, slices, device)}}};
+          {{F16, F16, F16},
+           {Load<F16xF16ToF16>(name, m, n, k, indices, slices, device)}}};
 
   auto loaded_kernels = kernels.find({lhs_type, rhs_type, dot_type});
   if (loaded_kernels != kernels.end()) {
