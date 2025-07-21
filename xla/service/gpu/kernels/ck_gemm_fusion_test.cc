@@ -48,7 +48,43 @@ class CkFusionTest : public HloTestBase {
 // Pattern matching tests
 //===----------------------------------------------------------------------===//
 
-// TODO
+TEST_F(CkFusionTest, RowMajorGemm) {
+  const char* hlo = R"(
+    HloModule test
+
+    ENTRY %main (p0: f16[15,19], p1: f16[19,17]) -> f16[15,17] {
+      %p0 = f16[15,19]{1,0} parameter(0)
+      %p1 = f16[19,17]{1,0} parameter(1)
+      ROOT %r = f16[15,17]{1,0} dot(%p0, %p1),
+        lhs_contracting_dims={1}, rhs_contracting_dims={0}
+    }
+  )";
+
+  const char* expected = R"(
+    ; CHECK: %ck_gemm {{.*}} {
+    ; CHECK:   [[P0:%[^ ]+]] = f16[15,19]{1,0} parameter(0)
+    ; CHECK:   [[P1:%[^ ]+]] = f16[19,17]{1,0} parameter(1)
+    ; CHECK:   ROOT [[DOT:%[^ ]+]] = f16[15,17]{1,0} dot([[P0]], [[P1]]),
+    ; CHECK:     lhs_contracting_dims={1}, rhs_contracting_dims={0}
+    ; CHECK: }
+
+    ; CHECK: ENTRY %main {{.*}} {
+    ; CHECK:   ROOT [[FUSION:%[^ ]+]] = f16[15,17]{1,0} fusion
+    ; CHECK:     kind=kCustom, calls=%ck_gemm,
+    ; CHECK:     backend_config={
+    ; CHECK:       "kind":"__custom_fusion",
+    ; CHECK:       "custom_fusion_config":{"name":"ck_gemm","kernel_index":0}
+    ; CHECK:     }
+    ; CHECK: }
+  )";
+
+  CustomKernelFusionPatternRegistry patterns;
+  patterns.Emplace<CkGemmPattern>();
+
+  auto device = TestGpuDeviceInfo::AMDMI210DeviceInfo();
+  CustomKernelFusionRewriter pass(&device, /*kernel_index=*/0, &patterns);
+  RunAndFilecheckHloRewrite(hlo, std::move(pass), expected);
+}
 
 //===----------------------------------------------------------------------===//
 // Run And Compare Tests
